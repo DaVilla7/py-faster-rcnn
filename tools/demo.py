@@ -39,6 +39,7 @@ NETS = {'vgg16': ('VGG16',
 
 def vis_detections(im, class_name, dets, thresh=0.5):
     """Draw detected bounding boxes."""
+    #若是没有类别概率大于阈值的直接返回
     inds = np.where(dets[:, -1] >= thresh)[0]
     if len(inds) == 0:
         return
@@ -47,20 +48,22 @@ def vis_detections(im, class_name, dets, thresh=0.5):
     fig, ax = plt.subplots(figsize=(12, 12))
     ax.imshow(im, aspect='equal')
     for i in inds:
+        #左上和右下两个坐标
         bbox = dets[i, :4]
         score = dets[i, -1]
-
+        #bbox[2] - bbox[0]为长;bbox[3] - bbox[1]为宽（bbox[0],bbox[1]为左上角坐标）
         ax.add_patch(
             plt.Rectangle((bbox[0], bbox[1]),
                           bbox[2] - bbox[0],
                           bbox[3] - bbox[1], fill=False,
                           edgecolor='red', linewidth=3.5)
             )
+        #标定框上写上类别
         ax.text(bbox[0], bbox[1] - 2,
                 '{:s} {:.3f}'.format(class_name, score),
                 bbox=dict(facecolor='blue', alpha=0.5),
                 fontsize=14, color='white')
-
+    #图片名字       
     ax.set_title(('{} detections with '
                   'p({} | box) >= {:.1f}').format(class_name, class_name,
                                                   thresh),
@@ -105,7 +108,9 @@ def demo(net, image_name):
                           cls_scores[:, np.newaxis])).astype(np.float32)
         #非极大值抑制
         keep = nms(dets, NMS_THRESH)
+        #找到非极大值抑制之后的若干样本
         dets = dets[keep, :]
+        #根据阈值，只展示非极大之抑制之后的，类别准确率大于阈值的结果
         vis_detections(im, cls, dets, thresh=CONF_THRESH)
 
 def parse_args():
