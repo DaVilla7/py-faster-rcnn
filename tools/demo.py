@@ -75,10 +75,12 @@ def demo(net, image_name):
     # Load the demo image
     im_file = os.path.join(cfg.DATA_DIR, 'demo', image_name)
     im = cv2.imread(im_file)
-
+           
     # Detect all object classes and regress object bounds
     timer = Timer()
     timer.tic()
+    #获取网络的score以及box
+    #socre:n×4矩陣; boxes:n*16矩阵，代表特征图数量（4和16分别为类别（加上背景）以及bbox参数）
     scores, boxes = im_detect(net, im)
     timer.toc()
     print ('Detection took {:.3f}s for '
@@ -88,11 +90,20 @@ def demo(net, image_name):
     CONF_THRESH = 0.8
     NMS_THRESH = 0.3
     for cls_ind, cls in enumerate(CLASSES[1:]):
+        #在类别中跳过background后进枚举
         cls_ind += 1 # because we skipped background
+        #该目标物的bbox（四个参数）
+        #比如说飞机残骸一种类别对应的box的四个参数（针对每一行取出，四个四个取，4是类别数
         cls_boxes = boxes[:, 4*cls_ind:4*(cls_ind + 1)]
+           #该目标物的score
         cls_scores = scores[:, cls_ind]
+        #hstack:把数组或者矩阵按照特定的维度进合并
+        #np.newaxis 在使用和功能上等价于 None，其实就是 None 的一个别名
+        #newaxis能够增加一个轴，[:np.newaxis]在列向量上增加一个轴
+        #在每个特征图的最后增加一列把每个图的cls_score添加到box后面
         dets = np.hstack((cls_boxes,
                           cls_scores[:, np.newaxis])).astype(np.float32)
+        #非极大值抑制
         keep = nms(dets, NMS_THRESH)
         dets = dets[keep, :]
         vis_detections(im, cls, dets, thresh=CONF_THRESH)
