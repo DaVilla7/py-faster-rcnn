@@ -37,6 +37,7 @@ import numpy as np
 def parse_rec(filename):
     """ Parse a PASCAL VOC xml file """
     #xml.etree.ElementTree为xml的python接口，可以以树的形式组织xml文件
+    #这里只读取了object相关的参数
     tree = ET.parse(filename)
     objects = []
     for obj in tree.findall('object'):
@@ -59,6 +60,8 @@ def voc_ap(rec, prec, use_07_metric=False):
     Compute VOC AP given precision and recall.
     If use_07_metric is true, uses the
     VOC 07 11 point method (default:False).
+        计算AP值，若use_07_metric=true,则用11个点采样的方法，将rec从0-1分成11个点，这些点prec值求平均近似表示AP
+    若use_07_metric=false,则采用更为精确的逐点积分方法
     """
     if use_07_metric:
         # 11 point metric
@@ -255,7 +258,7 @@ def voc_eval(detpath,
     fp = np.cumsum(fp)
     #积分图，在当前节点前的正检数量
     tp = np.cumsum(tp)
-    #召回率 正检数量 / 总检测结果数量
+    #召回率 正检数量 / 指定类别中的gt数量
     rec = tp / float(npos)
     # avoid divide by zero in case the first detection matches a difficult
     # ground truth
