@@ -39,8 +39,9 @@ class SolverWrapper(object):
             self.bbox_means, self.bbox_stds = \
                     rdl_roidb.add_bbox_regression_targets(roidb)
             print 'done'
-
+        #提取网络的结构
         self.solver = caffe.SGDSolver(solver_prototxt)
+        #将预训练网络的值赋到模型中
         if pretrained_model is not None:
             print ('Loading pretrained model '
                    'weights from {:s}').format(pretrained_model)
@@ -56,6 +57,7 @@ class SolverWrapper(object):
         """Take a snapshot of the network after unnormalizing the learned
         bounding-box regression weights. This enables easy use at test-time.
         """
+        #此处的net是网络预训练模型
         net = self.solver.net
 
         scale_bbox_params = (cfg.TRAIN.BBOX_REG and
@@ -109,10 +111,12 @@ class SolverWrapper(object):
 
         if last_snapshot_iter != self.solver.iter:
             model_paths.append(self.snapshot())
+        #返回循环训练后的所有snapshot的list
         return model_paths
 
 def get_training_roidb(imdb):
     """Returns a roidb (Region of Interest database) for use in training."""
+    #水平反转
     if cfg.TRAIN.USE_FLIPPED:
         print 'Appending horizontally-flipped training examples...'
         imdb.append_flipped_images()
