@@ -49,7 +49,7 @@ def parse_args():
     parser.add_argument('--set', dest='set_cfgs',
                         help='set config keys', default=None,
                         nargs=argparse.REMAINDER)
-
+    #./experiments/scripts/faster_rcnn_alt_opt.sh 0 user_define_net1 pascal_voc 
     if len(sys.argv) == 1:
         parser.print_help()
         sys.exit(1)
@@ -75,6 +75,8 @@ def get_solvers(net_name):
                [net_name, n, 'stage1_fast_rcnn_solver30k40k.pt'],
                [net_name, n, 'stage2_rpn_solver60k80k.pt'],
                [net_name, n, 'stage2_fast_rcnn_solver30k40k.pt']]
+    # [0]"models/pascal_voc/user_define_net1/faster_rcnn_alt_opt/stage1_rpn_train.pt"
+    
     solvers = [os.path.join(cfg.MODELS_DIR, *s) for s in solvers]
     # Iterations for each training stage
     max_iters = [80000, 40000, 80000, 40000]
@@ -105,20 +107,23 @@ def _init_caffe(cfg):
 def train_rpn(queue=None, imdb_name=None, init_model=None, solver=None,
               max_iters=None, cfg=None):
     """Train a Region Proposal Network in a separate training process.
+        #参数同过process传入
     """
 
     # Not using any proposals, just ground-truth boxes
+    #设定为使用RPN
     cfg.TRAIN.HAS_RPN = True
     cfg.TRAIN.BBOX_REG = False  # applies only to Fast R-CNN bbox regression
-    cfg.TRAIN.PROPOSAL_METHOD = 'gt'
-    cfg.TRAIN.IMS_PER_BATCH = 1
+    cfg.TRAIN.PROPOSAL_METHOD = 'gt' #默认是Selective_search
+    cfg.TRAIN.IMS_PER_BATCH = 1# Images to use per minibatch
     print 'Init model: {}'.format(init_model)
     print('Using config:')
     pprint.pprint(cfg)
 
     import caffe
     _init_caffe(cfg)
-
+    
+    #imbd_name默认是pascal_voc_2007
     roidb, imdb = get_roidb(imdb_name)
     print 'roidb len: {}'.format(len(roidb))
     output_dir = get_output_dir(imdb)
@@ -128,6 +133,7 @@ def train_rpn(queue=None, imdb_name=None, init_model=None, solver=None,
                             pretrained_model=init_model,
                             max_iters=max_iters)
     # Cleanup all but the final model
+    #删除除了最后一步的所有中间结果
     for i in model_paths[:-1]:
         os.remove(i)
     rpn_model_path = model_paths[-1]
@@ -140,7 +146,7 @@ def rpn_generate(queue=None, imdb_name=None, rpn_model_path=None, cfg=None,
     """
 
     cfg.TEST.RPN_PRE_NMS_TOP_N = -1     # no pre NMS filtering
-    cfg.TEST.RPN_POST_NMS_TOP_N = 2000  # limit top boxes after NMS
+    cfg.TEST.RPN_POST_NMS_TOP_N = 2000  # limit top boxes after NMS在非极大值抑制之后生成2000个boxes
     print 'RPN model: {}'.format(rpn_model_path)
     print('Using config:')
     pprint.pprint(cfg)
@@ -223,7 +229,7 @@ if __name__ == '__main__':
     mp_queue = mp.Queue()
     # solves, iters, etc. for each training stage
     solvers, max_iters, rpn_test_prototxt = get_solvers(args.net_name)
-
+    #交替训练 train_rpn - rpn_generate - train_fast_rcnn / train_rpn - rpn_generate - train_fast_rcnn
     print '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
     print 'Stage 1 RPN, init from ImageNet model'
     print '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
