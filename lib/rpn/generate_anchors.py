@@ -42,6 +42,7 @@ def generate_anchors(base_size=16, ratios=[0.5, 1, 2],
     """
 
     base_anchor = np.array([1, 1, base_size, base_size]) - 1
+    #base_anchor 为：[0,0,15,15]
     ratio_anchors = _ratio_enum(base_anchor, ratios)
     anchors = np.vstack([_scale_enum(ratio_anchors[i, :], scales)
                          for i in xrange(ratio_anchors.shape[0])])
@@ -50,6 +51,7 @@ def generate_anchors(base_size=16, ratios=[0.5, 1, 2],
 def _whctrs(anchor):
     """
     Return width, height, x center, and y center for an anchor (window).
+    #anchor的格式：宽，高，中心坐标
     """
 
     w = anchor[2] - anchor[0] + 1
@@ -75,8 +77,9 @@ def _mkanchors(ws, hs, x_ctr, y_ctr):
 def _ratio_enum(anchor, ratios):
     """
     Enumerate a set of anchors for each aspect ratio wrt an anchor.
+    #针对一个尺度的anchor生成一系列anchor
     """
-
+    #获取
     w, h, x_ctr, y_ctr = _whctrs(anchor)
     size = w * h
     size_ratios = size / ratios
