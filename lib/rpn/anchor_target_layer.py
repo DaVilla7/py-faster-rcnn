@@ -19,6 +19,7 @@ DEBUG = False
 
 class AnchorTargetLayer(caffe.Layer):
     """
+    #对anchors生成labels（拥有object为1否则为0），边界回归只针对object大于0的
     Assign anchors to ground-truth targets. Produces anchor classification
     labels and bounding-box regression targets.
     """
@@ -26,6 +27,7 @@ class AnchorTargetLayer(caffe.Layer):
     def setup(self, bottom, top):
         layer_params = yaml.load(self.param_str_)
         anchor_scales = layer_params.get('scales', (8, 16, 32))
+        #生成anchors
         self._anchors = generate_anchors(scales=np.array(anchor_scales))
         self._num_anchors = self._anchors.shape[0]
         self._feat_stride = layer_params['feat_stride']
@@ -126,15 +128,27 @@ class AnchorTargetLayer(caffe.Layer):
         # label: 1 is positive, 0 is negative, -1 is dont care
         labels = np.empty((len(inds_inside), ), dtype=np.float32)
         labels.fill(-1)
+        #这里overlaps是计算所有anchor与ground-truth的重合度，它是一个len(anchors) x len(gt_boxes)的二维数组，
+#         每个元素是各个anchor和gt_boxes的overlap值，这个overlap值的计算是这样的：
+#         overlap = (重合部分面积) / (anchor面积 + gt_boxes面积 - 重合部分面积)
 
         # overlaps between the anchors and the gt boxes
         # overlaps (ex, gt)
         overlaps = bbox_overlaps(
+            #ascontiguousarray返回一个在内存中地址连续的数组
             np.ascontiguousarray(anchors, dtype=np.float),
             np.ascontiguousarray(gt_boxes, dtype=np.float))
+        
+        #argmax_overlaps是每个anchor对应最大overlap的gt_boxes的下标
         argmax_overlaps = overlaps.argmax(axis=1)
+        
+        #max_overlaps是每个anchor对应最大的overlap值
         max_overlaps = overlaps[np.arange(len(inds_inside)), argmax_overlaps]
+        
+        #gt_argmax_overlaps是每个gt_boxes对应最大overlap的anchor的下标
         gt_argmax_overlaps = overlaps.argmax(axis=0)
+        
+        #gt_max_overlaps是每个gt_boxes对应最大的overlap值
         gt_max_overlaps = overlaps[gt_argmax_overlaps,
                                    np.arange(overlaps.shape[1])]
         gt_argmax_overlaps = np.where(overlaps == gt_max_overlaps)[0]
@@ -143,6 +157,7 @@ class AnchorTargetLayer(caffe.Layer):
             # assign bg labels first so that positive labels can clobber them
             labels[max_overlaps < cfg.TRAIN.RPN_NEGATIVE_OVERLAP] = 0
 
+        # 两种标记为1的anchor：1.跟gt重合最大的anchor;2.跟gt的overlab超过特定阈值的anchor
         # fg label: for each gt, anchor with highest overlap
         labels[gt_argmax_overlaps] = 1
 
@@ -152,28 +167,40 @@ class AnchorTargetLayer(caffe.Layer):
         if cfg.TRAIN.RPN_CLOBBER_POSITIVES:
             # assign bg labels last so that negative labels can clobber positives
             labels[max_overlaps < cfg.TRAIN.RPN_NEGATIVE_OVERLAP] = 0
-
+        
+        # 正样本：最大为128,不够128时候剩下的用负样本补齐到256
+        # 接下来两步保证正负样本严格一比一
         # subsample positive labels if we have too many
+        # 预设的RPN_FG_FRACTION即前景比例为0.5,预设的RPN_BATCHSIZE为256，即规定前景的anchor为128个
         num_fg = int(cfg.TRAIN.RPN_FG_FRACTION * cfg.TRAIN.RPN_BATCHSIZE)
         fg_inds = np.where(labels == 1)[0]
         if len(fg_inds) > num_fg:
+            #如果已经获得的正样本（前景）anchor数量大于128,把多出来的那一部分置为“-1”即忽略
             disable_inds = npr.choice(
                 fg_inds, size=(len(fg_inds) - num_fg), replace=False)
             labels[disable_inds] = -1
 
         # subsample negative labels if we have too many
+        # negative的数量，即RPN_BATCHSIZE减去前景数量
         num_bg = cfg.TRAIN.RPN_BATCHSIZE - np.sum(labels == 1)
+        # 所有负样本anchor的索引
         bg_inds = np.where(labels == 0)[0]
+        # 如果bg的数量大于量负样本数量，则将多出来的那一部分置为“忽略”
         if len(bg_inds) > num_bg:
             disable_inds = npr.choice(
                 bg_inds, size=(len(bg_inds) - num_bg), replace=False)
             labels[disable_inds] = -1
             #print "was %s inds, disabling %s, now %s inds" % (
                 #len(bg_inds), len(disable_inds), np.sum(labels == 0))
-
+                
+        #这里将计算每一个anchor与重合度最高的ground_truth的偏移值，详细的计算方法在论文中提到，
+        #在fast-rcnn/bbox_transform.py中的bbox_transform函数也非常容易看懂
         bbox_targets = np.zeros((len(inds_inside), 4), dtype=np.float32)
+        
+        #计算anchor与gt的回归值
         bbox_targets = _compute_targets(anchors, gt_boxes[argmax_overlaps, :])
-
+        
+        #这里是inside_weight和out_weight的计算。- -#不过好像全程都是1？
         bbox_inside_weights = np.zeros((len(inds_inside), 4), dtype=np.float32)
         bbox_inside_weights[labels == 1, :] = np.array(cfg.TRAIN.RPN_BBOX_INSIDE_WEIGHTS)
 
@@ -203,7 +230,8 @@ class AnchorTargetLayer(caffe.Layer):
             print means
             print 'stdevs:'
             print stds
-
+            
+        #还记得文初将all_anchors裁减掉了2/3左右，仅仅保留在图像内的anchor吗，这里就是将其复原作为下一层的输入了，并reshape成相应的格式
         # map up to original set of anchors
         labels = _unmap(labels, total_anchors, inds_inside, fill=-1)
         bbox_targets = _unmap(bbox_targets, total_anchors, inds_inside, fill=0)
@@ -258,6 +286,7 @@ class AnchorTargetLayer(caffe.Layer):
 
 
 def _unmap(data, count, inds, fill=0):
+    #上个函数将all_anchors裁减掉了2/3左右，仅仅保留在图像内的anchor，这里就是将其复原作为下一层的输入了，并reshape成相应的格式
     """ Unmap a subset of item (data) back to the original set of items (of
     size count) """
     if len(data.shape) == 1:
