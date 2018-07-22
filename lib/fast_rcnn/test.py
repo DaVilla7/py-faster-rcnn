@@ -21,10 +21,10 @@ import os
 
 def _get_image_blob(im):
     """Converts an image into a network input.
-
+    
     Arguments:
         im (ndarray): a color image in BGR order
-
+        #原来的RGB改为（2,1,0）
     Returns:
         blob (ndarray): a data blob holding an image pyramid
         im_scale_factors (list): list of image scales (relative to im) used
@@ -34,6 +34,7 @@ def _get_image_blob(im):
     im_orig -= cfg.PIXEL_MEANS
 
     im_shape = im_orig.shape
+    #长边，短边
     im_size_min = np.min(im_shape[0:2])
     im_size_max = np.max(im_shape[0:2])
 
