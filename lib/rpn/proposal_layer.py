@@ -17,9 +17,16 @@ DEBUG = False
 
 class ProposalLayer(caffe.Layer):
     """
+    #将RPN网络的输出结果（每个anchor的置信度和边界回归估计）转化为proposals
     Outputs object detection proposals by applying estimated bounding-box
     transformations to a set of regular boxes (called "anchors").
     """
+#     proposal_layer整个处理过程：1.生成所有的anchor，对anchor进行4个坐标变换生成新的坐标变成proposals
+#     （按照老方法先在最后一层feature map的每个像素点上滑动生成所有的anchor，然后将所有的anchor坐标乘以16，
+#     即映射到原图就得到所有的region proposal，接着再用boundingbox regression对每个region proposal进行坐标变换生成更优的region proposal坐标，
+#     也是最终的region proposal坐标）　　2.处理掉所有坐标超过了图像边界的proposal　　3.处理掉所有长度宽度小于min_size的proposal　
+#     4.把所有的proposal按score高低进行排序　　5.选择得分前pre_nms_topN的proposal，这是在进行nms前进行一次选择　　6.进行nms处理　　
+#     7.选择得分前post_nms_topN的proposal，这是在进行nms后进行的一次选择　　最终就得到了需要传入fast rcnn网络的region proposal。
 
     def setup(self, bottom, top):
         # parse the layer parameter string, which must be valid YAML
@@ -27,6 +34,7 @@ class ProposalLayer(caffe.Layer):
 
         self._feat_stride = layer_params['feat_stride']
         anchor_scales = layer_params.get('scales', (8, 16, 32))
+        #生成初始的9个anchors
         self._anchors = generate_anchors(scales=np.array(anchor_scales))
         self._num_anchors = self._anchors.shape[0]
 
@@ -46,7 +54,7 @@ class ProposalLayer(caffe.Layer):
 
     def forward(self, bottom, top):
         # Algorithm:
-        #
+        # 对于图像中每个点都生成9个anchor
         # for each (H, W) location i
         #   generate A anchor boxes centered on cell i
         #   apply predicted bbox deltas at cell i to each of the A anchors
@@ -62,14 +70,19 @@ class ProposalLayer(caffe.Layer):
             'Only single item batches are supported'
 
         cfg_key = str(self.phase) # either 'TRAIN' or 'TEST'
-        pre_nms_topN  = cfg[cfg_key].RPN_PRE_NMS_TOP_N
-        post_nms_topN = cfg[cfg_key].RPN_POST_NMS_TOP_N
+        pre_nms_topN  = cfg[cfg_key].RPN_PRE_NMS_TOP_N   #这是在进行nms处理前，从anchor中筛选出前topn个
+        post_nms_topN = cfg[cfg_key].RPN_POST_NMS_TOP_N  #这是经过nms处理后，从anchor中筛选出钱topn个
         nms_thresh    = cfg[cfg_key].RPN_NMS_THRESH
         min_size      = cfg[cfg_key].RPN_MIN_SIZE
 
         # the first set of _num_anchors channels are bg probs
         # the second set are the fg probs, which we want
         scores = bottom[0].data[:, self._num_anchors:, :, :]
+         # bbox deltas will be (1, 4 * A, H, W) format
+        # transpose to (1, H, W, 4 * A)
+        # reshape to (1 * H * W * A, 4) where rows are ordered by (h, w, a)
+        # in slowest to fastest order
+        # bbox_deltas 是rpn_bbox_pred预测出来的四个值（代表两个点）
         bbox_deltas = bottom[1].data
         im_info = bottom[2].data[0, :]
 
@@ -100,7 +113,7 @@ class ProposalLayer(caffe.Layer):
         K = shifts.shape[0]
         anchors = self._anchors.reshape((1, A, 4)) + \
                   shifts.reshape((1, K, 4)).transpose((1, 0, 2))
-        anchors = anchors.reshape((K * A, 4))
+        anchors = anchors.reshape((K * A, 4)) #和anchor_target_layer层一样，得到所有的anchor坐标值，并且形状是4列多行　
 
         # Transpose and reshape predicted bbox transformations to get them
         # into the same order as the anchors:
