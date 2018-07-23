@@ -37,6 +37,7 @@ class ProposalTargetLayer(caffe.Layer):
         top[4].reshape(1, self._num_classes * 4)
 
     def forward(self, bottom, top):
+        # 要处理的 ROI来自于RPN，其格式为两点坐标
         # Proposal ROIs (0, x1, y1, x2, y2) coming from RPN
         # (i.e., rpn.proposal_layer.ProposalLayer), or any other source
         all_rois = bottom[0].data
@@ -45,6 +46,7 @@ class ProposalTargetLayer(caffe.Layer):
         # and other times after box coordinates -- normalize to one format
         gt_boxes = bottom[1].data
 
+        # 将gt加入候选的ROI中
         # Include ground-truth boxes in the set of candidate rois
         zeros = np.zeros((gt_boxes.shape[0], 1), dtype=gt_boxes.dtype)
         all_rois = np.vstack(
@@ -114,6 +116,8 @@ def _get_bbox_regression_labels(bbox_target_data, num_classes):
     Returns:
         bbox_target (ndarray): N x 4K blob of regression targets
         bbox_inside_weights (ndarray): N x 4K blob of loss weights
+        
+    # 4个值的边界回归（中心点和宽高）
     """
 
     clss = bbox_target_data[:, 0]
@@ -147,8 +151,10 @@ def _compute_targets(ex_rois, gt_rois, labels):
 def _sample_rois(all_rois, gt_boxes, fg_rois_per_image, rois_per_image, num_classes):
     """Generate a random sample of RoIs comprising foreground and background
     examples.
+    # 生成随机的ROI的采样（由前景和背景组成）
     """
     # overlaps: (rois x gt_boxes)
+    # 提取roi 和 gt的 overlaps
     overlaps = bbox_overlaps(
         np.ascontiguousarray(all_rois[:, 1:5], dtype=np.float),
         np.ascontiguousarray(gt_boxes[:, :4], dtype=np.float))
@@ -157,6 +163,7 @@ def _sample_rois(all_rois, gt_boxes, fg_rois_per_image, rois_per_image, num_clas
     labels = gt_boxes[gt_assignment, 4]
 
     # Select foreground RoIs as those with >= FG_THRESH overlap
+    # 选择符合条件的前景物（大于FG_THRESH）
     fg_inds = np.where(max_overlaps >= cfg.TRAIN.FG_THRESH)[0]
     # Guard against the case when an image has fewer than fg_rois_per_image
     # foreground RoIs
@@ -184,6 +191,7 @@ def _sample_rois(all_rois, gt_boxes, fg_rois_per_image, rois_per_image, num_clas
     labels[fg_rois_per_this_image:] = 0
     rois = all_rois[keep_inds]
 
+    # 做回归
     bbox_target_data = _compute_targets(
         rois[:, 1:5], gt_boxes[gt_assignment[keep_inds], :4], labels)
 
